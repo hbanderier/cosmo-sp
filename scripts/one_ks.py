@@ -16,13 +16,14 @@ from joblib import Parallel, delayed
 
 def ks(x, n_sam, c_alpha):
     idxs = np.argsort(x, axis=-1)
+    nx = (np.sum(~np.isnan(x), axis=-1) / 2).astype(int)
     x = np.take_along_axis(x, idxs, axis=-1)
     exact = np.isclose(x[..., 0], x[..., -1], rtol=1e-3)
-    y1 = np.cumsum(idxs < n_sam, axis=-1) / n_sam
-    y2 = np.cumsum(idxs >= n_sam, axis=-1) / n_sam
+    y1 = np.cumsum(idxs < n_sam, axis=-1) / nx[:, :, :, np.newaxis]
+    y2 = np.cumsum(idxs >= n_sam, axis=-1) / nx[:, :, :, np.newaxis]
     d = np.amax(np.abs(y1 - y2), axis=-1)
 
-    rej = d > c_alpha * np.sqrt(2 / n_sam)
+    rej = d > c_alpha * np.sqrt(2 / nx[:, :, :])
     rej[exact] = False
     return rej
 
@@ -70,7 +71,7 @@ if __name__ == "__main__":
     sys.stdout = open(f'.out/{varname}_{freq}_python.out', 'w')
     sys.stderr = sys.stdout
     
-    with open(f"../../data/results/{freq}/metadata.pickle", "rb") as handle:
+    with open(f"../../hbanderi/data/results/{freq}/metadata.pickle", "rb") as handle:
         metadata = pkl.load(handle)
 
     variablemap = metadata["variablemap"]
@@ -107,7 +108,7 @@ if __name__ == "__main__":
 
     for i in range(0, n_chunks, at_once):
         fnames = [
-            f"../../data/main/{varname}s{j}.nc" 
+            f"../../hbanderi/data/main/{varname}s{j}.nc" 
             for j in range(i, i + at_once)
         ]
         darr = xr.open_mfdataset(fnames)[bigname].load()
@@ -161,7 +162,7 @@ if __name__ == "__main__":
         gc.collect()
     results = xr.concat(results, dim="newtime")
     avgrejection = xr.concat(avgrejection, dim="newtime")
-    results.to_netcdf(f"../../data/results/{freq}/{varname}.nc")
-    avgrejection.to_netcdf(f"../../data/rejection/{freq}/{varname}_avg.nc")
+    results.to_netcdf(f"../../hbanderi/data/results/{freq}/{varname}.nc")
+    avgrejection.to_netcdf(f"../../hbanderi/data/rejection/{freq}/{varname}_avg.nc")
     del results, avgrejection
     gc.collect()
