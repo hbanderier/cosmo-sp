@@ -1,0 +1,18 @@
+ &PHYCTL
+  ico2_rad = 2,
+  lgsp_first = .TRUE.,
+  limpltkediff = .FALSE.,
+  lseaice = .FALSE.,
+  itype_albedo = 2
+  ke_soil = 9,
+  czml_soil = 0.005, 0.025, 0.07, 0.16, 0.34, 0.70, 1.42, 2.86, 5.74, 11.5,
+  czbot_w_so=8.0,
+  nincconv = 2,
+  itype_evsl = 4,
+  itype_heatcond = 2,
+  itype_aerosol = 2,
+  itype_root= 2,
+  itype_hydmod=1,
+  lsoil_init_fill = .FALSE.,
+  lsso=.False.,
+ /END
