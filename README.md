@@ -38,14 +38,27 @@ by COSMO two files every 12h plus 3 files every 24h, each corresponding to many 
 
 ### CDO
 
-Using the script lump.sh (don't forget to module daint CDO before)
+Using the script `lump.sh` (don't forget to module daint CDO before), placed in the ensemble folder, we turn these many files (3650 or 7300 per output folder, quickly reaching the million files cap) into big monthly files (now only 120 per output folder). We then delete the originial output files using `del.sh`.
+They are called `lffdm$yyyy$mm.nc`. Those are backed up in `/project/pr133/hbanderi/data_backup/${ensembleName}`
 
 ### Custom hierarchy for better parallelism
 
-
+To feed the main script `one_ks.py`, we again use a different data structure to maximize IO speed / computing power balance. Each variable output by COSMO is stored in 20 files (one per semester) and has the value of this variable for all timesteps within that semester, for all ensembles, all their members and all of space, in netCDF 
+DataArrays of shape (n_ensembles, n_time, nx, ny, n_memb), typically something like (7, 181, 132, 129, 20). Those files are also backed up in `/project/pr133/hbanderi/data_backup/main/` under the name `${varname}s{semester}`.
 
 ## Script
 
-### Where they fetch stuff
-### What they do
+The main script `one_ks.py` performs the elementwise statistical tests using `cupy` and does so `n_sel` times.
+
+### Where it fetches stuff
+
+It uses the variablewise files in the `main` data folder.
+
+### What it does
+
+Takes most of the needed quantities from the metadata file `metadata.pkl` written by the main notebook, and takes two argument as inputs : test and freq, the test to perform ("KS", "MWU" or "T") and the oversampling frequency ("1D", "2D", "1w", "1M", etc...).
+
 ### Where they output stuff
+
+The results folder and the frequency subfolder. Again one file per semester otherwise it's too big, plus one file for the space-averaged rejections.
+Those files are backed up in `/project/pr133/hbanderi/data_backup/results/`.
