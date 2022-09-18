@@ -23,7 +23,10 @@ def ks(a, b):
     nx = nx[:, :, :, cp.newaxis]
     y1 = cp.cumsum(idxs_ks < nx, axis=-1) / nx
     y2 = cp.cumsum(idxs_ks >= nx, axis=-1) / nx
-    return cp.amax(cp.abs(y1 - y2), axis=-1)
+    invalid_idx = np.logical_or(np.isclose(x, 0), np.isclose(x, 1))
+    ds = cp.abs(y1 - y2)
+    ds[invalid_idx] = 0
+    return cp.amax(ds, axis=-1)
 
 
 def ttest(a, mub, stdb):
@@ -154,7 +157,7 @@ def main(varname, test, freq):
         results.to_netcdf(
             f"{datapath}/results/{freq}/{varname}_{test}_s{i}.nc"
         )
-    glavgres = xr.concat(glavgres, dim="time")
+    glavgres = xr.concat(glavgres, dim="newtime")
     glavgres.to_netcdf(
         f"{datapath}/results/{freq}/{varname}_{test}.nc"
     )
