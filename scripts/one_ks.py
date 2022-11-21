@@ -105,18 +105,19 @@ def oversample(darr, freq):
 @click.argument("varname")
 @click.option("--test", type=click.Choice(["MWU", "KS", "T"], case_sensitive=True), default="KS", help="Which Statistical test to perform")
 @click.option("--freq", type=click.Choice(["1D", "2D", "3D", "5D", "1w", "2w", "1M", "3M"], case_sensitive=True), default="1D", help="Resampling frequency")
-def main(varname, test, freq):
+@click.option("--ana", type=click.Choice(["main", "sensi"], case_sensitive=True), default="KS", help="Which of the two analyses to perform")
+def main(varname, test, freq, ana):
     sys.stdout = open(f'.out/{varname}_{freq}_python.out', 'w')
     sys.stderr = sys.stdout
     datapath = "/scratch/snx3000/hbanderi/data"
     
-    with open(f"{datapath}/results/{freq}/metadata.pickle", "rb") as handle:
+    with open(f"{datapath}/results/{ana}_{freq}/metadata.pickle", "rb") as handle:
         metadata = pkl.load(handle)
 
     variablemap = metadata["variablemap"]
     bigname = variablemap[varname][1]
     h = variablemap[varname][1][:2]
-    comps = metadata["comps"]
+    comps = metadata["comps"][ana]
     notref = np.where(comps != "ref")[0]
     ref = np.where(comps == "ref")[0][0]
     n_sel = metadata["n_sel"]
@@ -141,7 +142,7 @@ def main(varname, test, freq):
         freq="12h"
 
     for i in range(0, n_chunks):
-        fname = f"{datapath}/main/{varname}s{i}.nc"
+        fname = f"{datapath}/{ana}/{varname}s{i}.nc"
         darr = xr.open_dataset(fname)[bigname].load()
         darr = darr[:, :, bs:-bs, bs:-bs, :]
         darr = oversample(darr, freq)
@@ -155,11 +156,11 @@ def main(varname, test, freq):
             results[..., s] = one_s(darrcp, ref, notref, n_sam, replace, test, crit_val).get()
         glavgres.append(results.mean(dim=darr.dims[2:4]))
         results.to_netcdf(
-            f"{datapath}/results/{freq}/{varname}_{test}_s{i}.nc"
+            f"{datapath}/results/{ana}_{freq}/{varname}_{test}_s{i}.nc"
         )
     glavgres = xr.concat(glavgres, dim="newtime")
     glavgres.to_netcdf(
-        f"{datapath}/results/{freq}/{varname}_{test}.nc"
+        f"{datapath}/results/{ana}_{freq}/{varname}_{test}.nc"
     )
 
     
