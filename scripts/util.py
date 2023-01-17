@@ -74,36 +74,6 @@ def mwu(a, b): # Mann-Whitney U metric
     return np.amax([ua, a.shape[-1] ** 2 - ua], axis=0)
 
 
-def one_s(darr, ref, notref, n_sam, replace, test, crit_val): # Performs one chunk worth of test.
-    # Draw reference. Should redraw for every test maybe ? Shouldn't matter
-    idxs_ref = ran.choice(darr.shape[-1], n_sam, replace=replace)
-    b = darr[ref, ..., idxs_ref].transpose((1, 2, 3, 0))
-    # Predefine ref to be filled for every test in notref
-    rej = cp.empty((len(notref), *darr.shape[1:4]), dtype=bool)
-    # Some test-specific definitions, a bit ugly
-    if test == "KS":
-        to_do = ks
-        other_args = [b]
-    elif test == "T":
-        to_do = ttest
-        mub = cp.nanmean(b, axis=-1)
-        stdb = cp.nanstd(b, axis=-1)
-        other_args = [mub, stdb]
-    elif test == "MWU":
-        to_do = mwu
-        other_args = [b]
-    else:
-        print("Wrong test specifier")
-        return -1 # replace with an exception
-    for n in range(len(notref)):
-        # Draw test
-        idxs = ran.choice(darr.shape[-1], n_sam, replace=replace)
-        a = darr[notref[n], ..., idxs].transpose((1, 2, 3, 0))
-        # Do the do
-        rej[n, ...] = to_do(a, *other_args) > crit_val[test]
-    return rej
-
-
 def ks_p(d, n): # p-values of the KS test, from the distance (output of ks(a, b))
     return cp.exp(- d ** 2 * n)
 
