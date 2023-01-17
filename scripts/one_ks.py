@@ -5,7 +5,7 @@ import numpy as np
 import numpy.random as ran
 import cupy as cp
 import xarray as xr
-from util import PATHBASE, MONTHS, one_s, oversample
+from util import PATHBASE, MONTHS, loaddarr, one_s, oversample
 
 
 @click.command()
@@ -29,17 +29,12 @@ def main(varname, test, freq, ana):
     replace = metadata["replace"]
     bs = metadata["boundary_size"]
     crit_val = metadata["crit_val"]
-    files_to_load = metadata["files_to_load"]
 
     glavgres = [] # Compute spatial averages on the fly for Christian's method
 
     for i, filename in enumerate(files_to_load):
+        darr = loaddarr(varname, bigname, comps, i, ana, True, True, bs)
         date = MONTHS[i]
-        fname = f"{PATHBASE}/big{ana}/{varname}{date}.nc"
-        darr = xr.open_dataset(fname)[bigname].squeeze()  # squeeze because ncecat leaves a dangling length-one axis when selecting a pressure, z or soil level in a bigger dataarray.
-        darr = darr.coarsen(member=len(comps)).construct(member=("member", "comp"))
-        darr = darr.transpose("comp", "time", ..., "member")
-        darr = darr[:, :, bs:-bs, bs:-bs, :]
         darr = oversample(darr, freq)
         darrcp = cp.asarray(darr.values)
         results = np.empty((len(notref), *darr.shape[1:4], n_sel))

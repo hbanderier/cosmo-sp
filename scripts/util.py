@@ -25,7 +25,7 @@ def loaddarr(varname, bigname, comps, k, ana="main", big=True, values=True, bs=N
         anaprefix = ""
     basename = f"{PATHBASE}/{anaprefix}{ana}/{varname}"
     if isinstance(k, int) or isinstance(k, str):
-        darr = xr.open_dataset(f"{basename}{suffix[k]}.nc")[bigname].squeeze()
+        darr = xr.open_dataset(f"{basename}{suffix[k]}.nc")[bigname].squeeze()  # squeeze because ncecat may leave a dangling length-one dimension when selecting a p / z / soil level
     elif isinstance(k, Iterable):
         fnames = [f"{basename}{suffix[j]}.nc" for j in k]
         darr = xr.open_mfdataset(fnames)[bigname].squeeze()
@@ -71,7 +71,7 @@ def mwu(a, b): # Mann-Whitney U metric
         for j in range(a.shape[-1]):
             u += (b[..., j] > a[..., i]) + 0.5 * (b[..., j] == a[..., i])
     
-    return np.amax([ua, a.shape[-1] ** 2 - ua], axis=0)
+    return cp.amax([ua, a.shape[-1] ** 2 - ua], axis=0)
 
 
 def ks_p(d, n): # p-values of the KS test, from the distance (output of ks(a, b))
