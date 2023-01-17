@@ -32,7 +32,7 @@ def main(varname, test, freq, ana):
 
     glavgres = [] # Compute spatial averages on the fly for Christian's method
 
-    for i, filename in enumerate(files_to_load):
+    for i, date in enumerate(MONTHS):
         darr = loaddarr(varname, bigname, comps, i, ana, True, False, bs)
         darr = oversample(darr, freq)
         darrcp = cp.asarray(darr.values)
@@ -44,7 +44,6 @@ def main(varname, test, freq, ana):
         for s in range(n_sel):
             results[..., s] = one_s(darrcp, ref, notref, n_sam, replace, test, crit_val).get()
         glavgres.append(results.mean(dim=darr.dims[2:4]))
-        date = MONTHS[i]
         results.to_netcdf(
             f"{PATHBASE}/results/{ana}_{freq}/{varname}_{test}_{date}.nc"
         )
