@@ -17,12 +17,13 @@ def main(varname, test, freq, ana):
     with open(f"{PATHBASE}/big{ana}/metadata.pickle", "rb") as handle:
         metadata = pkl.load(handle)
 
-    varstuff = metadata["variablemap"][varname]
-    bigname = varstuff[1]
-    h = varstuff[0][:2]
-    comps = metadata["comps"][ana]
-    notref = np.where(comps != "ref")[0]
-    ref = np.where(comps == "ref")[0][0]
+    vmap = metadata["variablemap"][varname]
+    bigname = vmap[1]
+    h = vmap[0][:2]
+    ensembles = metadata["ensembles"][ana]
+    ensembles_in_results = metadata["ensembles_in_results"][ana]
+    ref = metadata["ref"][ana]
+    notref = metadata["notref"][ana]
     n_sel = metadata["n_sel"]
     n_sam = metadata["n_sam"]
     n_mem = metadata["n_mem"]
@@ -31,15 +32,21 @@ def main(varname, test, freq, ana):
     crit_val = metadata["crit_val"]
 
     glavgres = [] # Compute spatial averages on the fly for Christian's method
-
+    
     for i, date in enumerate(MONTHS):
-        darr = loaddarr(varname, bigname, comps, i, ana, True, False, bs)
+        darr = loaddarr(varname, bigname, ensembles, i, ana, True, False, bs)
         darr = oversample(darr, freq)
         darrcp = cp.asarray(darr.values)
         results = np.empty((len(notref), *darr.shape[1:4], n_sel))
         results = xr.DataArray(
             results, 
-            dims=["comp", *darr.dims[1:4], "sel"]
+            coords={
+                "ensemble" : ensembles_in_results, 
+                "time": darr.time, 
+                darr.dims[2]: darr.coords[darr.dims[2]],  # might be called rlon or srlon depending on the variable
+                darr.dims[3]: darr.coords[darr.dims[3]],  # might be called rlat or srlat depending on the variable
+                "sel": np.arange(n_sel),
+            }
         )
         for s in range(n_sel):
             results[..., s] = one_s(darrcp, ref, notref, n_sam, replace, test, crit_val).get()
@@ -47,7 +54,7 @@ def main(varname, test, freq, ana):
         results.to_netcdf(
             f"{PATHBASE}/results/{ana}_{freq}/{varname}_{test}_{date}.nc"
         )
-    glavgres = xr.concat(glavgres, dim="newtime")
+    glavgres = xr.concat(glavgres, dim="time")
     glavgres.to_netcdf(
         f"{PATHBASE}/results/{ana}_{freq}/{varname}_{test}.nc"
     )

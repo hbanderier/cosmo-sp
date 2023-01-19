@@ -14,9 +14,7 @@ def main(ana):
         metadata = pkl.load(handle)
         
     variablemap = metadata["variablemap"]
-    comps = metadata["comps"][ana]
-    notref = np.where(comps != "ref")[0]
-    ref = np.where(comps == "ref")[0][0]
+    ensembles = metadata["ensembles"][ana]
     bs = metadata["boundary_size"]
 
     alpha = 0.1
@@ -25,7 +23,7 @@ def main(ana):
         decisions[k] = []
         bigname = variablemap[varname][1]
         for s in range(N_MONTHS):
-            darr = loaddarr(varname, bigname, comps, s, ana, True, True, bs)
+            darr = loaddarr(varname, bigname, ensembles, s, ana, True, True, bs)
             ite = notref[1:]
             p = cp.empty((len(ite), *darr.shape[1:4]))
             b = cp.asarray(darr[2])
