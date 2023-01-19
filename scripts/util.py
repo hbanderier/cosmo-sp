@@ -53,56 +53,84 @@ def get_grid(varname, bs=None):
     if bs is not None:
         return thislatdim, thislatcoord[bs:-bs], thislondim, thisloncoord[bs:-bs]
     return thislatdim, thislatcoord, thislondim, thisloncoord
-    
 
-def open_results(varname, ana, freq, ensembles_in_results, bs, k):
-    results = xr.open_dataarray(f"{PATHBASE}/results/{ana}_{freq}/{varname}_KS_{MONTHS[k]}.nc", engine="h5netcdf")
+
+def coords_results(varname, ana, freq, ensembles_in_results, bs, k, shape):
+    thislatdim, thislatcoord, thislondim, thisloncoord = get_grid(varname, bs)
+    if freq == "1D" and shape[1] > 31:  # check if 12h
+        freq = "12h"
+    return {
+        "ensemble" : ensembles_in_results, 
+        "time": month_range(MONTHS[k], freq), 
+        thislatdim: thislatcoord,
+        thislondim: thisloncoord,
+        "sel": np.arange(results.shape[-1]),
+    }
+
+def open_results_old(varname, ana, freq, test, ensembles_in_results, bs, k):
+    results = xr.open_dataarray(f"{PATHBASE}/oldresults/{ana}_{freq}/{varname}_{test}_{MONTHS[k]}.nc", engine="h5netcdf")
     try:
         results = results.rename({"comp": "ensemble", "newtime": "time"})
     except ValueError:
         pass
     else:
-        thislatdim, thislatcoord, thislondim, thisloncoord = get_grid(varname, bs)
-        if freq == "1D" and results.shape[1] > 31:  # check if 12h
-            freq = "12h"
-        results = results.assign_coords({
-            "ensemble" : ensembles_in_results, 
-            "time": month_range(MONTHS[k], freq), 
-            thislatdim: thislatcoord,
-            thislondim: thisloncoord,
-            "sel": np.arange(results.shape[-1]),
-        })
+        results = results.assign_coords(coords_results(varname, ana, freq, ensembles_in_results, bs, k, results.shape))
     return results
 
 
-def open_decisions_pickle(varname, ana, freq, ensembles_in_results, bs):
+def open_results(varname, ana, freq, test, k):
+    results = xr.open_dataarray(f"{PATHBASE}/results/{ana}_{freq}/{varname}_{test}_{MONTHS[k]}.nc", engine="h5netcdf")
+    return results
 
-    with open(f"{PATHBASE}/results/{ana}_{freq}/decisions_{varname}.pkl", "rb") as handle:
-        decisions = pkl.load(handle)
+
+def coords_decisions(varname, ana, freq, ensembles_in_decisions, bs, shape=None):
     thislatdim, thislatcoord, thislondim, thisloncoord = get_grid(varname, bs)
-    if freq == "1D" and decisions.shape[1] > 366 * 10:  # check if 12h
+    if shape is not None and (freq == "1D" and shape[1] > 366 * 10):  # check if 12h
         freq = "12h"
+    return {
+        "ensemble" : ensembles_in_decisions, 
+        "time": full_range(freq), 
+        thislatdim: thislatcoord,
+        thislondim: thisloncoord,
+    }
+
+
+def open_decisions_pickle(varname, ana, freq, ensembles_in_decisions, bs):
+
+    with open(f"{PATHBASE}/oldresults/{ana}_{freq}/decisions_{varname}.pkl", "rb") as handle:
+        decisions = pkl.load(handle)
     decisions = xr.DataArray(
         decisions, 
-        coords={
-            "ensemble" : [ens for ens in ensembles_in_results if ens != "control"], 
-            "time": full_range(freq), 
-            thislatdim: thislatcoord,
-            thislondim: thisloncoord,
-    })
+        coords=coords_decisions(varname, ana, freq, ensembles_in_decisions, bs, decisions.shape)
+    )
     return decisions
 
-def open_avgdecs_pickle(varname, ana, freq, ensembles_in_results):
-    with open(f"{PATHBASE}/results/{ana}_{freq}/avgdecs_{varname}.pkl", "rb") as handle:
-        avgdecs = pkl.load(handle)
-    if freq == "1D" and avgdecs.shape[1] > 366 * 10:  # check if 12h
+
+def open_decisions(varname, ana, freq, test):
+    decisions = xr.open_dataarray(f"{PATHBASE}/results/{ana}_{freq}/decisions_{test}_{varname}.nc")
+    return decisions
+
+
+def coords_avgdecs(varname, ana, freq, ensembles_in_decisions, shape=None):
+    if shape is not None and (freq == "1D" and shape[1] > 366 * 10):  # check if 12h
         freq = "12h"
+    return {
+        "ensemble" : ensembles_in_decisions, 
+        "time": full_range(freq), 
+    }
+
+
+def open_avgdecs_pickle(varname, ana, freq, ensembles_in_decisions):
+    with open(f"{PATHBASE}/oldresults/{ana}_{freq}/avgdecs_{varname}.pkl", "rb") as handle:
+        avgdecs = pkl.load(handle)
     avgdecs = xr.DataArray(
         avgdecs, 
-        coords={
-            "comp" : [ens for ens in ensembles_in_results if ens != "control"], 
-            "time": full_range(freq), 
-    })
+        coords=coords_avgdecs(varname, ana, freq, ensembles_in_decisions, avgdecs.shape))
+    return avgdecs
+
+
+def open_avgdecs(varname, ana, freq, test):
+    avgdecs = xr.open_dataarray(f"{PATHBASE}/results/{ana}_{freq}/avgdecs_{test}_{varname}.nc")
     return avgdecs
 
 

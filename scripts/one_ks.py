@@ -5,7 +5,7 @@ import numpy as np
 import numpy.random as ran
 import cupy as cp
 import xarray as xr
-from util import PATHBASE, MONTHS, loaddarr, one_s, oversample
+from util import PATHBASE, MONTHS, loaddarr, one_s, oversample, coord_results
 
 
 @click.command()
@@ -40,13 +40,7 @@ def main(varname, test, freq, ana):
         results = np.empty((len(notref), *darr.shape[1:4], n_sel))
         results = xr.DataArray(
             results, 
-            coords={
-                "ensemble" : ensembles_in_results, 
-                "time": darr.time, 
-                darr.dims[2]: darr.coords[darr.dims[2]],  # might be called rlon or srlon depending on the variable
-                darr.dims[3]: darr.coords[darr.dims[3]],  # might be called rlat or srlat depending on the variable
-                "sel": np.arange(n_sel),
-            }
+            coord=coord_results(varname, ana, freq, ensembles_in_results, bs, i, results.shape)
         )
         for s in range(n_sel):
             results[..., s] = one_s(darrcp, ref, notref, n_sam, replace, test, crit_val).get()

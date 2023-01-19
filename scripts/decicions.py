@@ -4,7 +4,7 @@ import pickle as pkl
 import numpy as np
 import cupy as cp
 import xarray as xr
-from util import PATHBASE, MONTHS, cupy_decisions
+from util import PATHBASE, MONTHS, cupy_decisions, open_results, coords_decisions, coords_avgdecs
 
 
 @click.command()
@@ -19,22 +19,27 @@ def main(test, freq, ana):
     control= metadata["control"][ana]
     notcontrol = metadata["notcontrol"][ana]
     decision_quantile = metadata["decision_quantile"]
-
+    ensembles_in_decisions = metadata["ensembles_in_decisions"][ana]
+    bs = metadata["boundary_size"]
+    
     for i, varname in enumerate(variablemap):
-        decisions = []
-        avgdecs = []
-        for j, month in enumerate(MONTHS):
-            path = f"{PATHBASE}/results/{ana}_{freq}/{varname}_{test}_{month}.nc"
-            results = xr.open_dataarray(path).values
-            a, b = cupy_decisions(results, decision_quantile, control, notcontrol)
-            decisions.append(a.get())
-            avgdecs.append(b.get())
-        decisions = np.concatenate(decisions, axis=1)
-        avgdecs = np.concatenate(avgdecs, axis=1)
-        with open(f"{PATHBASE}/results/{ana}_{freq}/decisions_{varname}.pkl", "wb") as handle:
-            pkl.dump(decisions, handle)
-        with open(f"{PATHBASE}/results/{ana}_{freq}/avgdecs_{varname}.pkl", "wb") as handle:
-            pkl.dump(avgdecs, handle)
+        actualfreq = "12h" if (freq == "1D" and variablemap[varname][1][:2] == "12") else freq
+        coords1 = coords_decisions(varname, ana, actualfreq, ensembles_in_decisions, bs)
+        coords2 = coords_avgdecs(varname, ana, actualfreq, ensembles_in_decisions)
+        shape1 = [len(x) for x in coords1.values()]
+        shape2 = [len(x) for x in coords2.values()]
+        decisions = xr.DataArray(np.empty(shape1, dtype=bool), coords=coords1)
+        avgdecs = xr.DataArray(np.empty(shape2, dtype=bool), coords=coords2)
+        j = 0
+        for k, month in enumerate(MONTHS):
+            results = open_results(varname, ana, freq, test, k)
+            a, b = cupy_decisions(results.values, decision_quantile, control, notcontrol)
+            l = j + a.shape[1]
+            decisions[:, j:l, ...] = a.get()
+            avgdecs[:, j:l] = b.get()
+            j = l
+        decisions.to_netcdf(f"{PATHBASE}/results/{ana}_{freq}/decisions_{test}_{varname}.nc")
+        avgdecs.to_netcdf(f"{PATHBASE}/results/{ana}_{freq}/avgdecs_{test}_{varname}.nc")
             
             
 if __name__ == "__main__":
