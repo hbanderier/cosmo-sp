@@ -134,12 +134,12 @@ def open_avgdecs(varname, ana, freq, test):
     return avgdecs
 
 
-def ks(a, b):
+def ks_cumsum(a, b):  # old, faster but slightly wrong version of the ks test : does not solve the tie problem satisfactorily
     x = cp.concatenate([a, b], axis=-1) # Concat all data
     nx = cp.sum(~cp.isnan(a), axis=-1) # Sum of nonnan instead of length to get actual number of samples, because time-oversampling may give you nans in the time axis (expected behaviour, see implementation)
     idxs_ks = cp.argsort(x, axis=-1)
     x = cp.take_along_axis(x, idxs_ks, axis=-1) # The x-axis of the ks plots, take_along_axis instead of sorting again. I need it to check for too close values, and problems with sp
-    nx = nx[:, :, :, cp.newaxis] # Will need to be cast against a 4d array 
+    nx = nx[..., cp.newaxis] # Will need to be cast against a 4d array 
     # Cumulative distribution function using cumsum. The indices inferior to nx come from a the others come from b. 
     # Creates y1 (y2) the following way : for each other axis, iterates over the data in the member axis and adds 1/nx everytime it hits a value coming from a (b).
     y1 = cp.cumsum(idxs_ks < nx, axis=-1) / nx 
@@ -148,6 +148,27 @@ def ks(a, b):
     invalid_idx = np.logical_or(np.isclose(x, 0), np.isclose(x, 1))
     ds = cp.abs(y1 - y2)
     ds[invalid_idx] = 0
+    return cp.amax(ds, axis=-1)
+
+
+def searchsortednd(a, x):  # https://stackoverflow.com/questions/40588403/vectorized-searchsorted-numpy + cupy + reshapes
+    orig_shape = a.shape[:-1]
+    a = a.reshape(np.prod(orig_shape), -1)
+    x = x.reshape(np.prod(orig_shape), -1)
+    m, n = a.shape
+    max_num = cp.maximum(a.max() - a.min(), x.max() - x.min()) + 1
+    r = max_num * cp.arange(a.shape[0])[:, None]
+    p = cp.searchsorted((a + r).ravel(), (x + r).ravel()).reshape(m,-1)
+    return (p - n * (cp.arange(m)[:, None])).reshape((*orig_shape, -1))
+
+
+def ks(a, b):  # scipy.stats implementation using cupy and vectorized searchsorted
+    a, b = cp.sort(a, axis=-1), cp.sort(b, axis=-1)
+    nx = cp.sum(~cp.isnan(a), axis=-1)[..., cp.newaxis]
+    x = cp.concatenate([a, b], axis=-1) # Concat all data
+    y1 = searchsortednd(a, x) / nx
+    y2 = searchsortednd(b, x) / nx
+    ds = cp.abs(y1 - y2)
     return cp.amax(ds, axis=-1)
 
 
