@@ -151,14 +151,14 @@ def ks_cumsum(a, b):  # old, faster but slightly wrong version of the ks test : 
     return cp.amax(ds, axis=-1)
 
 
-def searchsortednd(a, x):  # https://stackoverflow.com/questions/40588403/vectorized-searchsorted-numpy + cupy + reshapes
+def searchsortednd(a, x, **kwargs):  # https://stackoverflow.com/questions/40588403/vectorized-searchsorted-numpy + cupy + reshapes
     orig_shape = a.shape[:-1]
     a = a.reshape(np.prod(orig_shape), -1)
     x = x.reshape(np.prod(orig_shape), -1)
     m, n = a.shape
     max_num = cp.maximum(a.max() - a.min(), x.max() - x.min()) + 1
     r = max_num * cp.arange(a.shape[0])[:, None]
-    p = cp.searchsorted((a + r).ravel(), (x + r).ravel()).reshape(m,-1)
+    p = cp.searchsorted((a + r).ravel(), (x + r).ravel(), **kwargs).reshape(m,-1)
     return (p - n * (cp.arange(m)[:, None])).reshape((*orig_shape, -1))
 
 
@@ -166,8 +166,8 @@ def ks(a, b):  # scipy.stats implementation using cupy and vectorized searchsort
     a, b = cp.sort(a, axis=-1), cp.sort(b, axis=-1)
     nx = cp.sum(~cp.isnan(a), axis=-1)[..., cp.newaxis]
     x = cp.concatenate([a, b], axis=-1) # Concat all data
-    y1 = searchsortednd(a, x) / nx
-    y2 = searchsortednd(b, x) / nx
+    y1 = searchsortednd(a, x, side="right") / nx
+    y2 = searchsortednd(b, x, side="right") / nx
     ds = cp.abs(y1 - y2)
     return cp.amax(ds, axis=-1)
 

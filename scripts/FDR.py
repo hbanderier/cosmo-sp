@@ -19,10 +19,11 @@ def main(ana, freq):
     ensembles = metadata["ensembles"][ana]
     ensembles_in_decisions = metadata["ensembles_in_decisions"][ana]
     bs = metadata["boundary_size"]
+    test = "KS"
 
     alpha = 0.1
     for varname in variablemap:
-        actualfreq = "12h" if (freq == "1D" and variablemap[varname][1][:2] == "12") else freq
+        actualfreq = "12h" if (freq == "1D" and variablemap[varname][0][:2] == "12") else freq
         coords = coords_avgdecs(varname, ana, actualfreq, ensembles_in_decisions)
         shape = [len(x) for x in coords.values()]
         decisions = xr.DataArray(np.zeros(shape), coords=coords)
