@@ -3,7 +3,7 @@
 #SBATCH --output=/users/hbanderi/cosmo-sp/scripts/logs/FDR_main.out
 #SBATCH --error=/users/hbanderi/cosmo-sp/scripts/logs/FDR_main.err
 #SBATCH --account='pr133'
-#SBATCH --time=10:00:00
+#SBATCH --time=15:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-core=1
 #SBATCH --ntasks-per-node=1
@@ -15,4 +15,4 @@
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 conda activate pers
-srun -o python /users/hbanderi/cosmo-sp/scripts/FDR.py --ana main &>> /users/hbanderi/cosmo-sp/scripts/logs/FDR_main.python.out
+srun -o python -u /users/hbanderi/cosmo-sp/scripts/FDR.py --test KS --ana main &>> /users/hbanderi/cosmo-sp/scripts/logs/FDR_main.python.out

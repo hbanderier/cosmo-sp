@@ -4,6 +4,7 @@ import xarray as xr
 import cupy as cp
 import pandas as pd
 import pickle as pkl
+from cupyx.scipy.special import erf as cupy_erf
 from collections.abc import Iterable
 
 PATHBASE = "/scratch/snx3000/hbanderi/data"
@@ -152,14 +153,20 @@ def ks_cumsum(a, b):  # old, faster but slightly wrong version of the ks test : 
 
 
 def searchsortednd(a, x, **kwargs):  # https://stackoverflow.com/questions/40588403/vectorized-searchsorted-numpy + cupy + reshapes
-    orig_shape = a.shape[:-1]
-    a = a.reshape(np.prod(orig_shape), -1)
-    x = x.reshape(np.prod(orig_shape), -1)
-    m, n = a.shape
-    max_num = cp.maximum(a.max() - a.min(), x.max() - x.min()) + 1
-    r = max_num * cp.arange(a.shape[0])[:, None]
-    p = cp.searchsorted((a + r).ravel(), (x + r).ravel(), **kwargs).reshape(m,-1)
+    orig_shape, n = a.shape[:-1], a.shape[-1]
+    m = np.prod(orig_shape)
+    a = a.reshape(m, n)
+    x = x.reshape(m, 2 * n)
+    max_num = cp.maximum(cp.nanmax(a) - cp.nanmin(a), cp.nanmax(x) - cp.nanmin(x)) + 1
+    r = max_num * cp.arange(m)[:, None]
+    p = cp.searchsorted((a + r).ravel(), (x + r).ravel(), side="right").reshape(m, -1)
     return (p - n * (cp.arange(m)[:, None])).reshape((*orig_shape, -1))
+
+
+def sanitize(x):
+    for val in [0, 1]:
+        x[cp.isclose(x, val)] = val
+    return cp.nan_to_num(x, nan=0)
 
 
 def ks(a, b):  # scipy.stats implementation using cupy and vectorized searchsorted
@@ -169,14 +176,17 @@ def ks(a, b):  # scipy.stats implementation using cupy and vectorized searchsort
     y1 = searchsortednd(a, x, side="right") / nx
     y2 = searchsortednd(b, x, side="right") / nx
     ds = cp.abs(y1 - y2)
-    return cp.amax(ds, axis=-1)
+    return cp.nanmax(ds, axis=-1)
 
 
-def ttest(a, mub, stdb): # T-test metric
+def ttest(a, mub, varb): # T-test metric
     mua = cp.nanmean(a, axis=-1)
-    stda = cp.nanstd(a, axis=-1)
-    std = stda**2 + stdb**2
-    return cp.sqrt(a.shape[-1]) * (mua - mub) / cp.sqrt(std)
+    vara = cp.nanvar(a, axis=-1, ddof=1)
+    var = vara + varb
+    t = cp.sqrt(a.shape[-1]) * (mua - mub) / cp.sqrt(var)
+    t =cp.nan_to_num(t, nan=0.0, posinf=0.0, neginf=0.0)
+    t[cp.isclose(var, 0)] = 0
+    return t
 
 
 def mwu(a, b): # Mann-Whitney U metric
@@ -189,38 +199,64 @@ def mwu(a, b): # Mann-Whitney U metric
     return cp.amax([ua, a.shape[-1] ** 2 - ua], axis=0)
 
 
-def ks_p(d, n): # p-values of the KS test, from the distance (output of ks(a, b))
-    return cp.exp(- d ** 2 * n)
-
-
-def one_s(darr, ref, notref, n_sam, replace, test, crit_val): # Performs one chunk worth of test.
-    # Draw reference. Should redraw for every test maybe ? Shouldn't matter
-    idxs_ref = ran.choice(darr.shape[-1], n_sam, replace=replace)
-    b = darr[ref, ..., idxs_ref].transpose((1, 2, 3, 0))
-    # Predefine ref to be filled for every test in notref
-    rej = cp.empty((len(notref), *darr.shape[1:4]), dtype=bool)
-    # Some test-specific definitions, a bit ugly
+def wraptest(b, test):
     if test == "KS":
         to_do = ks
         other_args = [b]
     elif test == "T":
         to_do = ttest
         mub = cp.nanmean(b, axis=-1)
-        stdb = cp.nanstd(b, axis=-1)
-        other_args = [mub, stdb]
+        varb = cp.nanvar(b, axis=-1, ddof=1)
+        other_args = [mub, varb]
     elif test == "MWU":
         to_do = mwu
         other_args = [b]
     else:
         print("Wrong test specifier")
         return -1 # replace with an exception
+    return to_do, other_args
+
+
+def one_s(darr, ref, notref, n_sam, replace, test, crit_val): # Performs one chunk worth of test.
+    # Draw reference. Should redraw for every test maybe ? Shouldn't matter
+    idxs_ref = ran.choice(darr.shape[-1], n_sam, replace=replace)
+    b = darr[ref, ..., idxs_ref].transpose((1, 2, 3, 0))
+    b = sanitize(b)
+    # Predefine ref to be filled for every test in notref
+    rej = cp.empty((len(notref), *darr.shape[1:4]), dtype=bool)
+    # Some test-specific definitions, a bit ugly
+    to_do, other_args = wraptest(b, test)
     for n in range(len(notref)):
         # Draw test
         idxs = ran.choice(darr.shape[-1], n_sam, replace=replace)
         a = darr[notref[n], ..., idxs].transpose((1, 2, 3, 0))
+        a = sanitize(a) # cloud cover vars causing issues
         # Do the do
-        rej[n, ...] = to_do(a, *other_args) > crit_val[test]
+        rej[n, ...] = cp.abs(to_do(a, *other_args)) > crit_val[test]
     return rej
+
+
+def ks_p(d, n): # p-values of the KS test, from the distance (output of ks(a, b))
+    return cp.exp(- d ** 2 * n)
+
+
+def t_p(t): # only valid for high number of dof (> 30), otherwise implement t_p(t, n) that uses the exact distribution
+    return 0.5 * (1 + cupy_erf(t))
+
+
+def p_wrapper(test, metric, n):
+    if test == "KS":
+        return ks_p(metric, n)
+    if test == "T":
+        if n >= 30:
+            return t_p(metric)
+        else:
+            print(f"{test}, n < 30, not implemented")
+            return -1
+    elif test == "MWU":
+        print(f"{test} not implemented")
+    print("Wrong test specifier")
+    return -1
 
 
 def oversample(darr, freq): # See thesis for explanation of why we would want to do this
