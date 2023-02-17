@@ -15,4 +15,4 @@
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 conda activate pers
-srun -o python -u /users/hbanderi/cosmo-sp/scripts/FDR.py --test KS --ana main &>> /users/hbanderi/cosmo-sp/scripts/logs/FDR_main.python.out
+srun -o python -u /users/hbanderi/cosmo-sp/scripts/FDR.py --test T --ana main &>> /users/hbanderi/cosmo-sp/scripts/logs/FDR_main.python.out

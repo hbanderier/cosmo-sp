@@ -43,7 +43,7 @@ def main(ana, freq, test):
             p = cp.sort(p.reshape((p.shape[0], p.shape[1], p.shape[2] * p.shape[3])), axis=-1)
             l = j + darr.shape[1]
             decisions[:, j:l] = cp.any(
-                p <= cp.arange(1, p.shape[-1] + 1) / p.shape[-1] * alpha
+                p <= cp.arange(1, p.shape[-1] + 1) / p.shape[-1] * alpha, axis=-1
             ).get()
             j = l
             cp.cuda.Device().synchronize()
