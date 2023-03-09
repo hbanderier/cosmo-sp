@@ -20,6 +20,7 @@ def main(ana, freq, test):
     ensembles = metadata["ensembles"][ana]
     ensembles_in_decisions = metadata["ensembles_in_decisions"][ana]
     bs = metadata["boundary_size"]
+    rounding = metadata["rounding"]
 
     alpha = 0.1
     for varname in variablemap:
@@ -33,11 +34,11 @@ def main(ana, freq, test):
             darr = loaddarr(varname, bigname, ensembles, k, ana, big=True, values=False, bs=bs)
             p = cp.zeros((len(ensembles_in_decisions), *darr.shape[1:4]))
             b = cp.asarray(darr.sel(ensemble="ref").values)
-            b = sanitize(b)
+            b = sanitize(b, rounding=rounding)
             to_do, other_args = wraptest(b, test)
             for i, ens in enumerate(ensembles_in_decisions):
                 a = cp.asarray(darr.sel(ensemble=ens))
-                a = sanitize(a)
+                a = sanitize(a, rounding=rounding)
                 p[i] = to_do(a, *other_args)
                 p[i] = p_wrapper(test, p[i], darr.shape[-1])
             p = cp.sort(p.reshape((p.shape[0], p.shape[1], p.shape[2] * p.shape[3])), axis=-1)

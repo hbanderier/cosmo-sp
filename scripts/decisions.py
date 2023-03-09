@@ -23,7 +23,7 @@ def main(test, freq, ana):
     bs = metadata["boundary_size"]
     
     for i, varname in enumerate(variablemap):
-        actualfreq = "12h" if (freq == "1D" and variablemap[varname][1][:2] == "12") else freq
+        actualfreq = "12h" if (freq == "1D" and variablemap[varname][0][:2] == "12") else freq
         coords1 = coords_decisions(varname, ana, actualfreq, ensembles_in_decisions, bs)
         coords2 = coords_avgdecs(varname, ana, actualfreq, ensembles_in_decisions)
         shape1 = [len(x) for x in coords1.values()]
@@ -35,6 +35,7 @@ def main(test, freq, ana):
             results = open_results(varname, ana, freq, test, k)
             a, b = cupy_decisions(results.values, decision_quantile, control, notcontrol)
             l = j + a.shape[1]
+            print(j, l)
             decisions[:, j:l, ...] = a.get()
             avgdecs[:, j:l] = b.get()
             j = l

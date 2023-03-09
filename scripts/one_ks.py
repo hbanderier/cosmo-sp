@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 import click
+import os
 import pickle as pkl
 import numpy as np
 import numpy.random as ran
 import cupy as cp
 import xarray as xr
-from util import PATHBASE, MONTHS, loaddarr, one_s, oversample, coord_results
+from util import PATHBASE, MONTHS, loaddarr, one_s, oversample, coords_results
 
 
 @click.command()
@@ -30,28 +31,27 @@ def main(varname, test, freq, ana):
     replace = metadata["replace"]
     bs = metadata["boundary_size"]
     crit_val = metadata["crit_val"]
-
+    rounding = metadata["rounding"]
+    
     glavgres = [] # Compute spatial averages on the fly for Christian's method
     
     for i, date in enumerate(MONTHS):
+        ofile = f"{PATHBASE}/results/{ana}_{freq}/{varname}_{test}_{date}.nc"
+        if os.path.isfile(ofile):
+            continue
+        print(date)
         darr = loaddarr(varname, bigname, ensembles, i, ana, True, False, bs)
         darr = oversample(darr, freq)
         darrcp = cp.asarray(darr.values)
         results = np.empty((len(notref), *darr.shape[1:4], n_sel))
         results = xr.DataArray(
             results, 
-            coord=coord_results(varname, ana, freq, ensembles_in_results, bs, i, results.shape)
+            coords=coords_results(varname, ana, freq, ensembles_in_results, bs, i, results.shape)
         )
         for s in range(n_sel):
-            results[..., s] = one_s(darrcp, ref, notref, n_sam, replace, test, crit_val).get()
+            results[..., s] = one_s(darrcp, ref, notref, n_sam, replace, test, crit_val, rounding=rounding).get()
         glavgres.append(results.mean(dim=darr.dims[2:4]))
-        results.to_netcdf(
-            f"{PATHBASE}/results/{ana}_{freq}/{varname}_{test}_{date}.nc"
-        )
-    glavgres = xr.concat(glavgres, dim="time")
-    glavgres.to_netcdf(
-        f"{PATHBASE}/results/{ana}_{freq}/{varname}_{test}.nc"
-    )
+        results.to_netcdf(ofile)
 
     
 if __name__ == "__main__":

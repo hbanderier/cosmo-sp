@@ -65,7 +65,7 @@ def coords_results(varname, ana, freq, ensembles_in_results, bs, k, shape):
         "time": month_range(MONTHS[k], freq), 
         thislatdim: thislatcoord,
         thislondim: thisloncoord,
-        "sel": np.arange(results.shape[-1]),
+        "sel": np.arange(shape[-1]),
     }
 
 def open_results_old(varname, ana, freq, test, ensembles_in_results, bs, k):
@@ -163,13 +163,13 @@ def searchsortednd(a, x, **kwargs):  # https://stackoverflow.com/questions/40588
     return (p - n * (cp.arange(m)[:, None])).reshape((*orig_shape, -1))
 
 
-def sanitize(x):
-    for val in [0, 1]:
-        x[cp.isclose(x, val)] = val
+def sanitize(x, rounding):
+    if rounding is not None:
+        x = cp.around(x, rounding)
     return cp.nan_to_num(x, nan=0)
 
 
-def ks(a, b):  # scipy.stats implementation using cupy and vectorized searchsorted
+def ks(a, b):  # scipy.stats-like implementation using cupy and vectorized searchsorted
     a, b = cp.sort(a, axis=-1), cp.sort(b, axis=-1)
     nx = cp.sum(~cp.isnan(a), axis=-1)[..., cp.newaxis]
     x = cp.concatenate([a, b], axis=-1) # Concat all data
@@ -190,20 +190,20 @@ def ttest(a, mub, varb): # T-test metric
 
 
 def mwu(a, b): # Mann-Whitney U metric
-    ua = cp.zeros_like(a[:, :, :, 0])
+    u = cp.zeros_like(a[:, :, :, 0])
     # Has to be a double loop otherwise the arrays would be too big to fit in the GPU. Anyways I'm looping over a small index (20 x 20 or 100 x 100)
     for i in range(b.shape[-1]):
         for j in range(a.shape[-1]):
             u += (b[..., j] > a[..., i]) + 0.5 * (b[..., j] == a[..., i])
     
-    return cp.amax([ua, a.shape[-1] ** 2 - ua], axis=0)
+    return cp.amax(cp.asarray([u, a.shape[-1] ** 2 - u]), axis=0)
 
 
 def wraptest(b, test):
     if test == "KS":
         to_do = ks
         other_args = [b]
-    elif test == "T":
+    elif test == "T": # never round it does not matter for t test 
         to_do = ttest
         mub = cp.nanmean(b, axis=-1)
         varb = cp.nanvar(b, axis=-1, ddof=1)
@@ -212,16 +212,15 @@ def wraptest(b, test):
         to_do = mwu
         other_args = [b]
     else:
-        print("Wrong test specifier")
-        return -1 # replace with an exception
+        raise ValueError("Wrong test specifier")
     return to_do, other_args
 
 
-def one_s(darr, ref, notref, n_sam, replace, test, crit_val): # Performs one chunk worth of test.
+def one_s(darr, ref, notref, n_sam, replace, test, crit_val, rounding: int = None): # Performs one chunk worth of test.
     # Draw reference. Should redraw for every test maybe ? Shouldn't matter
     idxs_ref = ran.choice(darr.shape[-1], n_sam, replace=replace)
-    b = darr[ref, ..., idxs_ref].transpose((1, 2, 3, 0))
-    b = sanitize(b)
+    b = darr[ref][..., idxs_ref]
+    b = sanitize(b, rounding)
     # Predefine ref to be filled for every test in notref
     rej = cp.empty((len(notref), *darr.shape[1:4]), dtype=bool)
     # Some test-specific definitions, a bit ugly
@@ -229,8 +228,8 @@ def one_s(darr, ref, notref, n_sam, replace, test, crit_val): # Performs one chu
     for n in range(len(notref)):
         # Draw test
         idxs = ran.choice(darr.shape[-1], n_sam, replace=replace)
-        a = darr[notref[n], ..., idxs].transpose((1, 2, 3, 0))
-        a = sanitize(a) # cloud cover vars causing issues
+        a = darr[notref[n]][..., idxs]
+        a = sanitize(a, rounding) # cloud cover vars causing issues
         # Do the do
         rej[n, ...] = cp.abs(to_do(a, *other_args)) > crit_val[test]
     return rej
@@ -251,12 +250,8 @@ def p_wrapper(test, metric, n):
         if n >= 30:
             return t_p(metric)
         else:
-            print(f"{test}, n < 30, not implemented")
-            return -1
-    elif test == "MWU":
-        print(f"{test} not implemented")
-    print("Wrong test specifier")
-    return -1
+            raise ValueError(f"{test}, n < 30, not implemented")
+    raise ValueError(f"Wrong test specifier : {test}")
 
 
 def oversample(darr, freq): # See thesis for explanation of why we would want to do this
