@@ -1,11 +1,60 @@
+import os
 import numpy as np
 import numpy.random as ran
 import xarray as xr
 import cupy as cp
 import pandas as pd
 import pickle as pkl
+import cartopy as ctp
 from cupyx.scipy.special import erf as cupy_erf
 from collections.abc import Iterable
+import matplotlib as mpl
+import matplotlib.animation as animation
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap, rgb2hex
+from matplotlib.offsetbox import AnchoredText
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+def get_array(z):  # if we use cupy
+    try:
+        return z.get()
+    except AttributeError:
+        return z
+
+
+SMALL_SIZE = 13
+MEDIUM_SIZE = 15
+BIGGER_SIZE = 18
+
+plt.rc("font", size=SMALL_SIZE)  # controls default text sizes
+plt.rc("axes", titlesize=BIGGER_SIZE)  # fontsize of the axes title
+plt.rc("axes", labelsize=MEDIUM_SIZE)  # fontsize of the x and y labels
+plt.rc("xtick", labelsize=MEDIUM_SIZE)  # fontsize of the tick labels
+plt.rc("ytick", labelsize=MEDIUM_SIZE)  # fontsize of the tick labels
+plt.rc("legend", fontsize=BIGGER_SIZE)  # legend fontsize
+plt.rc("figure", titlesize=BIGGER_SIZE)  # fontsize of the figure title
+mpl.rcParams["animation.html"] = "jshtml"
+
+CMAP = LinearSegmentedColormap.from_list(
+    "gr",
+    [
+        [21 / 256, 176 / 256, 26 / 256, 1],
+        [1, 1, 1, 1],
+        [229 / 256, 0, 0, 1],
+    ],
+    N=50,
+)
+CMAP_HEX = [rgb2hex(c) for c in CMAP(np.linspace(0, 1, 50))]
+HERE = "__xarray_dataarray_variable__"
+
+COLORS = [  # https://coolors.co/palette/ef476f-ffd166-06d6a0-118ab2-073b4c
+    "#ef476f",  # pinky red
+    "#ffd166",  # yellow
+    "#06d6a0",  # cyany green
+    "#118ab2",  # light blue
+    "#073b4c",  # dark blue
+]
 
 PATHBASE = "/scratch/snx3000/hbanderi/data"
 TSTA = "19890101"
@@ -46,78 +95,96 @@ def full_range(freq):
     return pd.date_range(pd.to_datetime(MONTHS[0], format="%Y%m"), pd.to_datetime(MONTHS[-1], format="%Y%m") + pd.DateOffset(months=1), freq=freq, inclusive="left") 
 
 
-def get_grid(varname, bs=None):
-    thislatdim = "srlat" if varname in ["v_200hPa", "v_100m"] else "rlat"
-    thislatcoord = xr.open_dataarray(f"{PATHBASE}/gridinfo/{thislatdim}.nc")
-    thislondim = "srlon" if varname in ["u_200hPa", "u_100m"] else "rlon"
-    thisloncoord = xr.open_dataarray(f"{PATHBASE}/gridinfo/{thislondim}.nc")
+def get_grid(varname, bs=None, full=False):
+    rlonname = 'rlon'
+    lonname = 'lon'
+    rlatname = 'rlat'
+    latname = 'lat'
+    if varname in ['u_200hPa', 'u_100m']:
+        rlonname = 'srlon'
+        latname = 'slatu'
+        lonname = 'slonu'
+    elif varname in ['v_200hPa', 'v_100m']:
+        rlatname = 'srlat'
+        latname = 'slatv'
+        lonname = 'slonv'
+    rlon = xr.open_dataarray(f'{PATHBASE}/gridinfo/{rlonname}.nc')
+    rlat = xr.open_dataarray(f'{PATHBASE}/gridinfo/{rlatname}.nc')
+    if not full:
+        if bs is not None:
+            return {rlatname: rlat[bs:-bs], rlonname: rlon[bs:-bs]}
+        return {rlatname: rlat, rlonname: rlon}
+    lon = xr.open_dataarray(f'{PATHBASE}/gridinfo/{lonname}.nc').reset_coords([lonname, latname], drop=True)
+    lat = xr.open_dataarray(f'{PATHBASE}/gridinfo/{latname}.nc').reset_coords([lonname, latname], drop=True)
     if bs is not None:
-        return thislatdim, thislatcoord[bs:-bs], thislondim, thisloncoord[bs:-bs]
-    return thislatdim, thislatcoord, thislondim, thisloncoord
+        return {rlatname: rlat[bs:-bs], rlonname: rlon[bs:-bs]}, {latname: lat[bs:-bs, bs:-bs], lonname: lon[bs:-bs, bs:-bs]}
+    return {rlatname: rlat, rlonname: rlon}, {latname: lat, lonname: lon}
 
 
 def coords_results(varname, ana, freq, ensembles_in_results, bs, k, shape):
-    thislatdim, thislatcoord, thislondim, thisloncoord = get_grid(varname, bs)
-    if freq == "1D" and shape[1] > 31:  # check if 12h
-        freq = "12h"
-    return {
-        "ensemble" : ensembles_in_results, 
-        "time": month_range(MONTHS[k], freq), 
-        thislatdim: thislatcoord,
-        thislondim: thisloncoord,
-        "sel": np.arange(shape[-1]),
-    }
+    dims, coords = get_grid(varname, bs, full=True)
+    if freq == '1D' and shape[1] > 31:  # check if 12h
+        freq = '12h'
+    fulldims = dict(
+        ensemble=ensembles_in_results, 
+        time=month_range(MONTHS[k], freq), 
+        **dims,
+        sel=np.arange(shape[-1])
+    )
+    return fulldims, coords
 
 def open_results_old(varname, ana, freq, test, ensembles_in_results, bs, k):
-    results = xr.open_dataarray(f"{PATHBASE}/oldresults/{ana}_{freq}/{varname}_{test}_{MONTHS[k]}.nc", engine="h5netcdf")
+    results = xr.open_dataarray(f'{PATHBASE}/oldresults/{ana}_{freq}/{varname}_{test}_{MONTHS[k]}.nc', engine='h5netcdf')
     try:
-        results = results.rename({"comp": "ensemble", "newtime": "time"})
+        results = results.rename({'comp': 'ensemble', 'newtime': 'time'})
     except ValueError:
         pass
     else:
-        results = results.assign_coords(coords_results(varname, ana, freq, ensembles_in_results, bs, k, results.shape))
+        dims, coords = coords_results(varname, ana, freq, ensembles_in_results, bs, k, results.shape)
+        results = results.assign_coords(dims).assign_coords(coords)
     return results
 
 
 def open_results(varname, ana, freq, test, k):
-    results = xr.open_dataarray(f"{PATHBASE}/results/{ana}_{freq}/{varname}_{test}_{MONTHS[k]}.nc", engine="h5netcdf")
+    results = xr.open_dataarray(f'{PATHBASE}/results/{ana}_{freq}/{varname}_{test}_{MONTHS[k]}.nc', engine='h5netcdf')
     return results
 
 
 def coords_decisions(varname, ana, freq, ensembles_in_decisions, bs, shape=None):
-    thislatdim, thislatcoord, thislondim, thisloncoord = get_grid(varname, bs)
-    if shape is not None and (freq == "1D" and shape[1] > 366 * 10):  # check if 12h
-        freq = "12h"
-    return {
-        "ensemble" : ensembles_in_decisions, 
-        "time": full_range(freq), 
-        thislatdim: thislatcoord,
-        thislondim: thisloncoord,
-    }
+    dims, coords = get_grid(varname, bs, full=True)
+    if shape is not None and (freq == '1D' and shape[1] > 366 * 10):  # check if 12h
+        freq = '12h'
+    fulldims = dict(
+        ensemble=ensembles_in_decisions, 
+        time=full_range(freq), 
+        **dims,
+    )
+    return fulldims, coords
 
 
 def open_decisions_pickle(varname, ana, freq, ensembles_in_decisions, bs):
 
-    with open(f"{PATHBASE}/oldresults/{ana}_{freq}/decisions_{varname}.pkl", "rb") as handle:
+    with open(f'{PATHBASE}/oldresults/{ana}_{freq}/decisions_{varname}.pkl', 'rb') as handle:
         decisions = pkl.load(handle)
+    dims, coords = coords_decisions(varname, ana, freq, ensembles_in_decisions, bs, decisions.shape)
     decisions = xr.DataArray(
         decisions, 
-        coords=coords_decisions(varname, ana, freq, ensembles_in_decisions, bs, decisions.shape)
-    )
+        coords=dims
+    ).assign_coords(coords)
     return decisions
 
 
 def open_decisions(varname, ana, freq, test):
-    decisions = xr.open_dataarray(f"{PATHBASE}/results/{ana}_{freq}/decisions_{test}_{varname}.nc")
+    decisions = xr.open_dataarray(f'{PATHBASE}/results/{ana}_{freq}/decisions_{test}_{varname}.nc')
     return decisions
 
 
 def coords_avgdecs(varname, ana, freq, ensembles_in_decisions, shape=None):
-    if shape is not None and (freq == "1D" and shape[1] > 366 * 10):  # check if 12h
-        freq = "12h"
+    if shape is not None and (freq == '1D' and shape[1] > 366 * 10):  # check if 12h
+        freq = '12h'
     return {
-        "ensemble" : ensembles_in_decisions, 
-        "time": full_range(freq), 
+        'ensemble' : ensembles_in_decisions, 
+        'time': full_range(freq), 
     }
 
 
@@ -297,3 +364,105 @@ def cupy_decisions(results, quantile, control, notcontrol):
         decision[i, ...] = cp.mean(results[j], axis=-1) > cp.quantile(results[control], quantile, axis=-1)
         avgdec[i, ...] = cp.mean(avgres[j], axis=-1) > cp.quantile(avgres[control], quantile, axis=-1)
     return decision, avgdec
+
+
+
+def create_axes(m, n):
+    with open("/users/hbanderi/cosmo-sp/rotated_pole.pkl", "rb") as handle:
+        rotated_pole = pkl.load(handle)
+    pole_lat = rotated_pole["grid_north_pole_latitude"]
+    pole_lon = rotated_pole["grid_north_pole_longitude"]
+
+    # Transform for rotated lat/lon
+    crs_rot = ctp.crs.RotatedPole(pole_longitude=pole_lon, pole_latitude=pole_lat)
+
+    # Figure
+    projection = crs_rot
+    fig, axes = plt.subplots(
+        m,
+        n,
+        subplot_kw={"projection": projection},
+        constrained_layout=True,
+        figsize=(int(6.5 * n), int(6.5 * m)),
+    )
+    coastline = ctp.feature.NaturalEarthFeature(
+        "physical", "coastline", "10m", edgecolor="black", facecolor="none"
+    )
+    borders = ctp.feature.NaturalEarthFeature(
+        "cultural",
+        "admin_0_boundary_lines_land",
+        "10m",
+        edgecolor="grey",
+        facecolor="none",
+    )
+    for ax in np.atleast_1d(axes).flatten():
+        ax.set_xlim([-33.93, 23.71])  # heh
+        ax.set_ylim([-28.93, 27.39])
+        ax.add_feature(coastline)
+        ax.add_feature(borders)
+        ax.set_xmargin(0)
+        ax.set_ymargin(0)
+    return fig, axes
+
+
+def create_plot(to_plot, titles, level, twolevel=False, startindex=-1, cmap=CMAP):
+    transform = ctp.crs.PlateCarree()
+
+    if twolevel:
+        n = len(to_plot) // 2
+        m = 2
+    else:
+        n = len(to_plot)
+        m = 1
+
+    fig, axes = create_plot(m, n)
+    axes = np.atleast_1d(axes)
+    axes = axes.flatten()
+    # axes = np.atleast_1d(axes)
+
+    # Add coastline and boarders
+
+    plt_rej = []
+    cbar = [None] * len(to_plot)
+    for j in range(len(to_plot)):
+        ax = axes[j]
+        plt_rej.append(
+            ax.contourf(
+                lon,
+                lat,
+                to_plot[j][startindex],
+                levels=levels[j],
+                transform=transform,
+                transform_first=True,
+                cmap="coolwarm" if j != 2 else cmap,
+                zorder=0,
+            )
+        )
+        ax.set_title(f"Day {startindex}, {titles[j]}")
+
+        cbar[j] = fig.colorbar(plt_rej[j], ax=ax, fraction=0.046, pad=0.04)
+
+    def animate_all(i):
+        global plt_rej
+        for j in range(len(to_plot)):
+            ax = axes[j]
+            for c in plt_rej[j].collections:
+                c.remove()
+            plt_rej[j] = ax.contourf(
+                lon,
+                lat,
+                # lon,
+                to_plot[j][i],
+                levels=levels[j],
+                transform=transform,
+                transform_first=True,
+                cmap="coolwarm" if j != 2 else cmap,
+                zorder=0,
+            )
+            ax.set_title(
+                f"Day {i + 1}, {titles[j]}, g.a : {np.mean(to_plot[j][i]):.4f}"
+            )
+            cbar[j] = fig.colorbar(plt_rej[j], cax=fig.axes[len(axes) + j])
+        return plt_rej
+
+    return fig, axes, plt_rej, animate_all

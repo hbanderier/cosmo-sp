@@ -24,8 +24,8 @@ def main(test, freq, ana):
     
     for i, varname in enumerate(variablemap):
         actualfreq = "12h" if (freq == "1D" and variablemap[varname][0][:2] == "12") else freq
-        coords1 = coords_decisions(varname, ana, actualfreq, ensembles_in_decisions, bs)
-        coords2 = coords_avgdecs(varname, ana, actualfreq, ensembles_in_decisions)
+        dims1, coords1 = coords_decisions(varname, ana, actualfreq, ensembles_in_decisions, bs)
+        dims2, coords2 = coords_avgdecs(varname, ana, actualfreq, ensembles_in_decisions)
         shape1 = [len(x) for x in coords1.values()]
         shape2 = [len(x) for x in coords2.values()]
         decisions = xr.DataArray(np.empty(shape1, dtype=bool), coords=coords1)
