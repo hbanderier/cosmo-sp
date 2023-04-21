@@ -23,16 +23,16 @@ def get_array(z):  # if we use cupy
         return z
 
 
-SMALL_SIZE = 13
-MEDIUM_SIZE = 15
-BIGGER_SIZE = 18
+SMALL_SIZE = 9
+MEDIUM_SIZE = 10
+BIGGER_SIZE = 12
 
 plt.rc("font", size=SMALL_SIZE)  # controls default text sizes
 plt.rc("axes", titlesize=BIGGER_SIZE)  # fontsize of the axes title
 plt.rc("axes", labelsize=MEDIUM_SIZE)  # fontsize of the x and y labels
 plt.rc("xtick", labelsize=MEDIUM_SIZE)  # fontsize of the tick labels
 plt.rc("ytick", labelsize=MEDIUM_SIZE)  # fontsize of the tick labels
-plt.rc("legend", fontsize=BIGGER_SIZE)  # legend fontsize
+plt.rc("legend", fontsize=MEDIUM_SIZE)  # legend fontsize
 plt.rc("figure", titlesize=BIGGER_SIZE)  # fontsize of the figure title
 mpl.rcParams["animation.html"] = "jshtml"
 
@@ -47,6 +47,7 @@ CMAP = LinearSegmentedColormap.from_list(
 )
 CMAP_HEX = [rgb2hex(c) for c in CMAP(np.linspace(0, 1, 50))]
 HERE = "__xarray_dataarray_variable__"
+TEXTWIDTH_IN = 0.0138889 * 503.61377
 
 COLORS = [  # https://coolors.co/palette/ef476f-ffd166-06d6a0-118ab2-073b4c
     "#ef476f",  # pinky red
