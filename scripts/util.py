@@ -36,25 +36,42 @@ plt.rc("legend", fontsize=MEDIUM_SIZE)  # legend fontsize
 plt.rc("figure", titlesize=BIGGER_SIZE)  # fontsize of the figure title
 mpl.rcParams["animation.html"] = "jshtml"
 
+#CMAP = LinearSegmentedColormap.from_list(
+#    "gr",
+#    [
+#        [21 / 256, 176 / 256, 26 / 256, 1],
+#        [1, 1, 1, 1],
+#        [229 / 256, 0, 0, 1],
+#    ],
+#    N=50,
+#)
 CMAP = LinearSegmentedColormap.from_list(
-    "gr",
+    'bo',
     [
-        [21 / 256, 176 / 256, 26 / 256, 1],
-        [1, 1, 1, 1],
-        [229 / 256, 0, 0, 1],
+        '#FB5607',
+        '#FFFFFF',
+        '#3A86FF',
     ],
     N=50,
 )
+    
 CMAP_HEX = [rgb2hex(c) for c in CMAP(np.linspace(0, 1, 50))]
 HERE = "__xarray_dataarray_variable__"
 TEXTWIDTH_IN = 0.0138889 * 503.61377
 
-COLORS = [  # https://coolors.co/palette/ef476f-ffd166-06d6a0-118ab2-073b4c
-    "#ef476f",  # pinky red
-    "#ffd166",  # yellow
-    "#06d6a0",  # cyany green
-    "#118ab2",  # light blue
-    "#073b4c",  # dark blue
+#COLORS = [  # https://coolors.co/palette/ef476f-ffd166-06d6a0-118ab2-073b4c
+#    "#ef476f",  # pinky red
+#    "#ffd166",  # yellow
+#    "#06d6a0",  # cyany green
+#    "#118ab2",  # light blue
+#    "#073b4c",  # dark blue
+#]
+COLORS = [
+    '#FFBE0B',
+    '#FB5607',
+    '#FF006E',
+    '#8338EC',
+    '#3A86FF',
 ]
 
 PATHBASE = "/scratch/snx3000/hbanderi/data"
@@ -63,26 +80,33 @@ N_MONTHS = 120
 MONTHS = pd.date_range(TSTA, periods=N_MONTHS, freq="1MS").strftime("%Y%m")
 
 
-def loaddarr(varname, bigname, ensembles, k, ana="main", big=True, values=True, bs=None):
-    if big:
-        suffix = MONTHS
-        anaprefix = "big"
-    else:
-        suffix = [f"s{k}" for k in range(20)]
-        anaprefix = ""
-    basename = f"{PATHBASE}/{anaprefix}{ana}/{varname}"
+def load_mfdataset(bigname=None, *args, **kwargs):
+    if bigname is not None:
+        with xr.open_mfdataset(*args, **kwargs)[bigname] as da:
+            return da.load()
+    with xr.open_mfdataset(*args, **kwargs) as ds:
+        return ds.load() 
+   
+    
+def loaddarr(varname, bigname, ensembles, k, ana="main", values=True, bs=None, load=False):
+    basename = f"{PATHBASE}/{ana}/{varname}"
     if isinstance(k, int) or isinstance(k, str):
-        darr = xr.open_dataset(f"{basename}{suffix[k]}.nc")[bigname].squeeze()  # squeeze because ncecat may leave a dangling length-one dimension when selecting a p / z / soil level
+        if load:
+            darr = xr.load_dataset(f"{basename}{MONTHS[k]}.nc")[bigname].squeeze()
+        else:
+            darr = xr.open_dataset(f"{basename}{MONTHS[k]}.nc")[bigname].squeeze()  # squeeze because ncecat may leave a dangling length-one dimension when selecting a p / z / soil level
     elif isinstance(k, Iterable):
-        fnames = [f"{basename}{suffix[j]}.nc" for j in k]
-        darr = xr.open_mfdataset(fnames)[bigname].squeeze()
-    if big:
+        fnames = [f"{basename}{MONTHS[j]}.nc" for j in k]
+        if load:
+            darr = load_mfdataset(bigname, fnames).squeeze()
+        else:
+            darr = xr.open_mfdataset(fnames)[bigname].squeeze()
+    if ana != 'comb':
         darr = darr.coarsen(member=len(ensembles)).construct(member=("member", "ensemble"))
         darr = darr.transpose("ensemble", "time", ..., "member")
+        darr = darr.assign_coords({"ensemble": ensembles})  # might be useful
     if values:
         darr = darr.values
-    else:
-        darr = darr.assign_coords({"ensemble": ensembles})  # might be useful
     if bs is not None:
         return darr[:, :, bs:-bs, bs:-bs, :]
     return darr
@@ -327,7 +351,8 @@ def oversample(darr, freq): # See thesis for explanation of why we would want to
         return darr
     dims = list(darr.dims)
     # This is basically a fancy reshaping. (n_time, ..., n_mem) -> (n_time/freq, ..., n_mem * freq). freq is meant to be a period like 3 days, 1 week,... I know. I know....
-    groups = darr.resample(time=freq).groups
+    groups = darr.resample(time=freq, closed='right').groups
+    time_coord = {'time': np.asarray(list(groups.keys()))}
     # Iterate over each groups, select their time values in the original DataArray, stack time and member axes into single new axis "memb" and storr in list
     subdarrs = [
         darr.isel(time=value).stack(memb=("time", "member")).reset_index("memb", drop=True).rename({"memb": "member"})
@@ -344,15 +369,7 @@ def oversample(darr, freq): # See thesis for explanation of why we would want to
     # newdarr should know its own resampling frequency
     newdarr.attrs["freq"] = freq
     # Reindex to be compliant with the tests
-    return newdarr.reindex(
-        {
-            "time": pd.date_range(
-                start=newdarr.time.values[0],
-                periods=newdarr.shape[1],
-                freq=freq,
-            )
-        }
-    )
+    return newdarr.reindex(time_coord)
 
 
 def cupy_decisions(results, quantile, control, notcontrol):
