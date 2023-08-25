@@ -49,10 +49,9 @@ def main(varname, test, freq, ana):
         )
         for s in range(n_sel):
             results[..., s] = one_s(darrcp, ref, notref, n_sam, replace, test, crit_val, rounding=rounding).get()
-        glavgres.append(results.mean(dim=darr.dims[2:4]))
+        glavgres = results.mean(dim=darr.dims[2:4])
         results.to_netcdf(ofile)
-    glavgres = xr.concat(glavgres, dim='time')
-    glavgres.to_netcdf(f"{PATHBASE}/results/{ana}_{freq}/avg_{varname}_{test}_{date}.nc")
+        glavgres.to_netcdf(f"{PATHBASE}/results/{ana}_{freq}/avg_{varname}_{test}_{date}.nc")
     
 if __name__ == "__main__":
     main()

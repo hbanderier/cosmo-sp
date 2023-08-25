@@ -6,6 +6,7 @@ import cupy as cp
 import pandas as pd
 import pickle as pkl
 import cartopy as ctp
+import dask
 from cupyx.scipy.special import erf as cupy_erf
 from collections.abc import Iterable
 import matplotlib as mpl
@@ -46,11 +47,10 @@ mpl.rcParams["animation.html"] = "jshtml"
 #    N=50,
 #)
 CMAP = LinearSegmentedColormap.from_list(
-    'bo',
+    'ob',
     [
-        '#FB5607',
         '#FFFFFF',
-        '#3A86FF',
+        'tomato',
     ],
     N=50,
 )
@@ -67,11 +67,12 @@ TEXTWIDTH_IN = 0.0138889 * 503.61377
 #    "#073b4c",  # dark blue
 #]
 COLORS = [
-    '#FFBE0B',
-    '#FB5607',
-    '#FF006E',
-    '#8338EC',
-    '#3A86FF',
+    '#648FFF', # blue
+    '#FFB000', # yellow
+    '#785EF0', # purple 
+    '#DC267F', # pink
+    '#86106D', # dark purple
+    
 ]
 
 PATHBASE = "/scratch/snx3000/hbanderi/data"
@@ -102,9 +103,10 @@ def loaddarr(varname, bigname, ensembles, k, ana="main", values=True, bs=None, l
         else:
             darr = xr.open_mfdataset(fnames)[bigname].squeeze()
     if ana != 'comb':
-        darr = darr.coarsen(member=len(ensembles)).construct(member=("member", "ensemble"))
-        darr = darr.transpose("ensemble", "time", ..., "member")
-        darr = darr.assign_coords({"ensemble": ensembles})  # might be useful
+        with dask.config.set(**{'array.slicing.split_large_chunks': False}):
+            darr = darr.coarsen(member=len(ensembles)).construct(member=("member", "ensemble"))
+            darr = darr.transpose("ensemble", "time", ..., "member")
+            darr = darr.assign_coords({"ensemble": ensembles})  # might be useful
     if values:
         darr = darr.values
     if bs is not None:
@@ -120,7 +122,7 @@ def full_range(freq):
     return pd.date_range(pd.to_datetime(MONTHS[0], format="%Y%m"), pd.to_datetime(MONTHS[-1], format="%Y%m") + pd.DateOffset(months=1), freq=freq, inclusive="left") 
 
 
-def get_grid(varname, bs=None, full=False):
+def get_grid_names(varname):
     rlonname = 'rlon'
     lonname = 'lon'
     rlatname = 'rlat'
@@ -133,6 +135,11 @@ def get_grid(varname, bs=None, full=False):
         rlatname = 'srlat'
         latname = 'slatv'
         lonname = 'slonv'
+    return rlonname, lonname, rlatname, latname
+
+
+def get_grid(varname, bs=None, full=False):
+    rlonname, lonname, rlatname, latname = get_grid_names(varname)
     rlon = xr.open_dataarray(f'{PATHBASE}/gridinfo/{rlonname}.nc')
     rlat = xr.open_dataarray(f'{PATHBASE}/gridinfo/{rlatname}.nc')
     if not full:
@@ -200,7 +207,7 @@ def open_decisions_pickle(varname, ana, freq, ensembles_in_decisions, bs):
 
 
 def open_decisions(varname, ana, freq, test):
-    decisions = xr.open_dataarray(f'{PATHBASE}/results/{ana}_{freq}/decisions_{test}_{varname}.nc')
+    decisions = xr.open_dataarray(f'{PATHBASE}/results/{ana}_{freq}/decisions_{varname}_{test}.nc')
     return decisions
 
 
@@ -214,16 +221,15 @@ def coords_avgdecs(varname, ana, freq, ensembles_in_decisions, shape=None):
 
 
 def open_avgdecs_pickle(varname, ana, freq, ensembles_in_decisions):
-    with open(f"{PATHBASE}/oldresults/{ana}_{freq}/avgdecs_{varname}.pkl", "rb") as handle:
+    with open(f"{PATHBASE}/oldresults/{ana}_{freq}/avg_{varname}.pkl", "rb") as handle:
         avgdecs = pkl.load(handle)
     avgdecs = xr.DataArray(
         avgdecs, 
         coords=coords_avgdecs(varname, ana, freq, ensembles_in_decisions, avgdecs.shape))
     return avgdecs
 
-
 def open_avgdecs(varname, ana, freq, test):
-    avgdecs = xr.open_dataarray(f"{PATHBASE}/results/{ana}_{freq}/avgdecs_{test}_{varname}.nc")
+    avgdecs = xr.open_dataarray(f"{PATHBASE}/results/{ana}_{freq}/avgdecs_{varname}_{test}.nc")
     return avgdecs
 
 
@@ -245,14 +251,14 @@ def ks_cumsum(a, b):  # old, faster but slightly wrong version of the ks test : 
 
 
 def searchsortednd(a, x, **kwargs):  # https://stackoverflow.com/questions/40588403/vectorized-searchsorted-numpy + cupy + reshapes
-    orig_shape, n = a.shape[:-1], a.shape[-1]
+    orig_shape, n1, n2 = a.shape[:-1], a.shape[-1], x.shape[-1]
     m = np.prod(orig_shape)
-    a = a.reshape(m, n)
-    x = x.reshape(m, 2 * n)
+    a = a.reshape(m, n1)
+    x = x.reshape(m, n2)
     max_num = cp.maximum(cp.nanmax(a) - cp.nanmin(a), cp.nanmax(x) - cp.nanmin(x)) + 1
     r = max_num * cp.arange(m)[:, None]
     p = cp.searchsorted((a + r).ravel(), (x + r).ravel(), side="right").reshape(m, -1)
-    return (p - n * (cp.arange(m)[:, None])).reshape((*orig_shape, -1))
+    return (p - n1 * (cp.arange(m)[:, None])).reshape((*orig_shape, -1))
 
 
 def sanitize(x, rounding):
@@ -404,7 +410,7 @@ def create_axes(m, n):
         figsize=(int(6.5 * n), int(6.5 * m)),
     )
     coastline = ctp.feature.NaturalEarthFeature(
-        "physical", "coastline", "10m", edgecolor="black", facecolor="none"
+        "physical", "coastline", "110m", edgecolor="black", facecolor="none"
     )
     borders = ctp.feature.NaturalEarthFeature(
         "cultural",

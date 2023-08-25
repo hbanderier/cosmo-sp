@@ -39,8 +39,8 @@ def main(test, freq, ana):
             decisions[:, j:l, ...] = a.get()
             avgdecs[:, j:l] = b.get()
             j = l
-        decisions.to_netcdf(f"{PATHBASE}/results/{ana}_{freq}/decisions_{test}_{varname}.nc")
-        avgdecs.to_netcdf(f"{PATHBASE}/results/{ana}_{freq}/avgdecs_{test}_{varname}.nc")
+        decisions.to_netcdf(f"{PATHBASE}/results/{ana}_{freq}/decisions_{varname}_{test}.nc")
+        avgdecs.to_netcdf(f"{PATHBASE}/results/{ana}_{freq}/avgdecs_{varname}_{test}.nc")
             
             
 if __name__ == "__main__":
